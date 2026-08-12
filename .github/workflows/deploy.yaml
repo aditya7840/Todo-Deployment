@@ -3,13 +3,18 @@ name: Deploy to EC2
 on:
   workflow_dispatch:
 
+  push:
+    branches:
+      - main
+
+
 jobs:
 
   deploy:
 
     runs-on: ubuntu-latest
 
-    steps:
+    steps:  
 
       - name: Checkout deployment repository
         uses: actions/checkout@v4
