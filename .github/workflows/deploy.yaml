@@ -1,0 +1,53 @@
+name: Deploy to EC2
+
+on:
+  workflow_dispatch:
+
+jobs:
+
+  deploy:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout deployment repository
+        uses: actions/checkout@v4
+
+      - name: Copy production Compose file to EC2
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "docker-compose.prod.yml"
+          target: "/home/ubuntu/todo"
+
+      - name: Deploy application
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/todo
+
+            echo "Pulling latest Docker images..."
+
+            docker compose -f docker-compose.prod.yml pull
+
+            echo "Stopping old containers..."
+
+            docker compose -f docker-compose.prod.yml down
+
+            echo "Starting new containers..."
+
+            docker compose -f docker-compose.prod.yml up -d
+
+            echo "Removing unused images..."
+
+            docker image prune -f
+
+            echo "Deployment completed!"
+
+            docker compose -f docker-compose.prod.yml ps
