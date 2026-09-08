@@ -1,31 +1,221 @@
-version: '3.8'
+version: "3.9"
+
 services:
-  backend:
-    image: aditya7840/backend-app:latest
-    container_name: spring-backend
-    ports:
-      - "8080:8080"
-    depends_on:
-      - db
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/todo
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: postgres
-  frontend:
-    image: aditya7840/frontend-app:latest
-    container_name: react-frontend
-    ports:
-      - "3000:80"
-    depends_on:
-      - backend
+
+  ####################################################
+  # PostgreSQL
+  ####################################################
+
   db:
     image: postgres:15
     container_name: todo-postgres
+    restart: always
+
     environment:
       POSTGRES_DB: todo
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+
     volumes:
       - postgres-data:/var/lib/postgresql/data
+
+    networks:
+      - observability
+
+
+  ####################################################
+  # Spring Boot Backend
+  ####################################################
+
+  backend:
+    image: aditya7840/backend-app:latest
+    container_name: spring-backend
+    restart: always
+
+    depends_on:
+      - db
+      - otel-collector
+
+    ports:
+      - "8080:8080"
+
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/todo
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+
+      MAIL_USERNAME: your_email@gmail.com
+      MAIL_PASSWORD: your_app_password
+
+      # OpenTelemetry
+      OTEL_SERVICE_NAME: todo-backend
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=todo,deployment.environment=production
+
+    networks:
+      - observability
+
+
+  ####################################################
+  # React Frontend
+  ####################################################
+
+  frontend:
+    image: aditya7840/frontend-app:latest
+    container_name: react-frontend
+    restart: always
+
+    depends_on:
+      - backend
+
+    ports:
+      - "3000:80"
+
+    networks:
+      - observability
+
+
+  ####################################################
+  # OpenTelemetry Collector
+  ####################################################
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector
+    restart: always
+
+    command:
+      - "--config=/etc/otelcol/config.yaml"
+
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml
+
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8889:8889"
+
+    depends_on:
+      - tempo
+      - loki
+
+    networks:
+      - observability
+
+
+  ####################################################
+  # Grafana Tempo
+  # Traces
+  ####################################################
+
+  tempo:
+    image: grafana/tempo:latest
+    container_name: tempo
+    restart: always
+
+    command:
+      - "-config.file=/etc/tempo.yaml"
+
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml
+
+    ports:
+      - "3200:3200"
+
+    networks:
+      - observability
+
+
+  ####################################################
+  # Grafana Loki
+  # Logs
+  ####################################################
+
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    restart: always
+
+    command:
+      - "-config.file=/etc/loki/local-config.yaml"
+
+    volumes:
+      - ./loki-config.yaml:/etc/loki/local-config.yaml
+
+    ports:
+      - "3100:3100"
+
+    networks:
+      - observability
+
+
+  ####################################################
+  # Prometheus
+  # Metrics
+  ####################################################
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: always
+
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+
+    ports:
+      - "9090:9090"
+
+    depends_on:
+      - otel-collector
+
+    networks:
+      - observability
+
+
+  ####################################################
+  # Grafana
+  ####################################################
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: always
+
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+
+    ports:
+      - "3001:3000"
+
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+
+    depends_on:
+      - prometheus
+      - tempo
+      - loki
+
+    networks:
+      - observability
+
+
+####################################################
+# Persistent Volumes
+####################################################
+
 volumes:
   postgres-data:
+  grafana-data:
+
+
+####################################################
+# Docker Network
+####################################################
+
+networks:
+  observability:
