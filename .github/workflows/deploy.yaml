@@ -8,12 +8,37 @@ on:
       - main
 
 jobs:
+
   deploy:
+
     runs-on: ubuntu-latest
 
     steps:
+
+      # -----------------------------------------------
+      # Checkout Deployment Repository
+      # -----------------------------------------------
+
       - name: Checkout deployment repository
         uses: actions/checkout@v4
+
+
+      # -----------------------------------------------
+      # Check Deployment Files
+      # -----------------------------------------------
+
+      - name: Check deployment files
+        run: |
+          echo "Current directory:"
+          pwd
+
+          echo "Files:"
+          find . -maxdepth 3 -type f | sort
+
+
+      # -----------------------------------------------
+      # Copy Deployment Files to EC2
+      # -----------------------------------------------
 
       - name: Copy deployment files to EC2
         uses: appleboy/scp-action@v1
@@ -21,14 +46,15 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: |
-            docker-compose.prod.yml
-            prometheus.yml
-            tempo.yaml
-            loki-config.yaml
-            otel-collector-config.yaml
-            grafana
-          target: /home/ubuntu/todo
+
+          source: "docker-compose.prod.yml,prometheus.yml,tempo.yaml,loki-config.yaml,otel-collector-config.yaml,grafana"
+
+          target: "/home/ubuntu/todo"
+
+
+      # -----------------------------------------------
+      # Deploy Application
+      # -----------------------------------------------
 
       - name: Deploy application
         uses: appleboy/ssh-action@v1
@@ -36,41 +62,68 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
+
           script: |
+
             set -e
 
             cd /home/ubuntu/todo
 
-            echo "==============================="
-            echo "Deployment Files"
-            echo "==============================="
-            ls -R
+            echo "======================================"
+            echo "Deployment directory"
+            echo "======================================"
 
-            echo "==============================="
-            echo "Pulling latest Docker images..."
-            echo "==============================="
+            pwd
+            ls -la
+
+            echo "======================================"
+            echo "Checking configuration files"
+            echo "======================================"
+
+            test -f docker-compose.prod.yml
+            test -f prometheus.yml
+            test -f tempo.yaml
+            test -f loki-config.yaml
+            test -f otel-collector-config.yaml
+
+            echo "All required configuration files found."
+
+
+            echo "======================================"
+            echo "Pulling latest Docker images"
+            echo "======================================"
+
             docker compose -f docker-compose.prod.yml pull
 
-            echo "==============================="
-            echo "Stopping old containers..."
-            echo "==============================="
+
+            echo "======================================"
+            echo "Stopping old containers"
+            echo "======================================"
+
             docker compose -f docker-compose.prod.yml down
 
-            echo "==============================="
-            echo "Starting new containers..."
-            echo "==============================="
+
+            echo "======================================"
+            echo "Starting containers"
+            echo "======================================"
+
             docker compose -f docker-compose.prod.yml up -d
 
-            echo "==============================="
-            echo "Removing unused Docker images..."
-            echo "==============================="
+
+            echo "======================================"
+            echo "Removing unused Docker images"
+            echo "======================================"
+
             docker image prune -f
 
-            echo "==============================="
-            echo "Running Containers"
-            echo "==============================="
+
+            echo "======================================"
+            echo "Container Status"
+            echo "======================================"
+
             docker compose -f docker-compose.prod.yml ps
 
-            echo "==============================="
-            echo "Deployment Successful!"
-            echo "==============================="
+
+            echo "======================================"
+            echo "Deployment completed successfully!"
+            echo "======================================"
